@@ -1,0 +1,293 @@
+---
+title: "GDP and Self-rated Poverty"
+author: "Earl Macalam"
+date: "11/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The aim of this report is to investigate whether there is a relationship between self-rated poverty and GDP using the economic data obtained from World Bank and SWS. The two research questions are the following:
+
+1. How does GDP vary over the years?
+
+2. Does GDP have a direct effect on self-rated poverty? If not, then what other factors in the dataset have a relationship with the self-rated poverty?
+
+## Initial Data Analysis
+
+The data was collected from World Bank and SWS. It has 60 observations from year 1961 to 2019. Variables are:
+
+- GDP GROWTH (%)
+
+- GDP per capita ($)
+
+- Inflation (%)	
+
+- Unemployment (% of total Labor Force)
+
+- SELF RATED POVERTY (%) SWS
+
+- POVERTY INCIDENCE AMONG POPULATION (%)
+
+- POVERTY INCIDENCE AMONG FAMILIES (%)	
+
+- Total No. of Families (in thousands)	
+
+- No. of Families (in lowest 30%; in thousands)
+
+```{r message=FALSE}
+# Load package
+library(tidyverse)
+library(readxl)
+library(psych)
+```
+
+```{r}
+# Import data
+data <- read_excel("DATAx.xlsx")
+
+# Quick look at top 5 rows of data
+head(data)
+
+# Size of data
+dim(data)
+
+# Classification of variables
+str(data)
+
+# Look for any notable trends between all pairs of variables
+plot(data)
+
+# Some Stats
+summary(data)
+```
+
+**Info:**
+
+- Each row represents a collection of variables measured for an individual year.
+
+- Each column represents the different variables measured for each year.
+
+
+**SELF-RATED POVERTY**
+Just a brief summary of this variable.
+```{r}
+summary(data$`SELF RATED POVERTY (%) SWS`)
+```
+
+We have 23 missing values for this variable. We'll ommit these and use the available data.
+
+```{r}
+srp_data <- data %>% filter(YEAR >= 1984 & YEAR <= 2019) %>% 
+        rename(srp = "SELF RATED POVERTY (%) SWS")
+```
+
+**Getting to know more about `SELF RATED POVERTY`**
+
+Years with lowest and highest SRP:
+```{r}
+# Highest
+srp_data %>% filter(srp == max(srp)) %>% select(YEAR, srp)
+
+# Lowest
+srp_data %>% filter(srp == min(srp))  %>% select(YEAR, srp)
+```
+Take a pic:
+```{r message=FALSE}
+ggplot(data = srp_data, mapping = aes(x = YEAR, y = srp)) +
+        geom_point(color = "red") +
+        geom_smooth() + 
+        labs(title = "SRP (1984 - 2019)")
+```
+
+Comment here.
+
+
+**Sneak peek on `GDP GROWTH (%)`**
+```{r message=FALSE}
+data <- data %>% rename(GDP_GROWTH = "GDP GROWTH (%)")
+ggplot(data = data, mapping = aes(x = YEAR, y = GDP_GROWTH)) +
+        geom_point(color = "violet") +
+        geom_smooth() +
+        labs(title = "GDP GROWTH OVER THE YEAR")
+```
+
+GDP growth rate seems to decline in between 1980 and 2000. Also, GDP growth rate is hovering around 4 to 8 percent with mean value 4.415. Not bad enough.
+
+**Sneak peek on `Inflation (%)`**
+```{r message=FALSE}
+data <- data %>% rename(Inflation = "Inflation (%)")
+ggplot(data = data, mapping = aes(x = YEAR, y = Inflation)) +
+        geom_point(color = "brown") +
+        geom_smooth() + 
+        labs(title = "INFLATION RATE OVER THE YEAR")
+```
+
+Inflation rate is high around 1980. Let's take a look of that unusual value.
+
+```{r}
+# Unusual
+data %>% filter(Inflation == max(Inflation)) %>% select(YEAR, Inflation)
+```
+Year 1984 has the highest inflation rate. What happened this year!
+
+
+**Sneak peek on `Unemployment (% of total Labor Force)`**
+```{r message=FALSE, warning=FALSE}
+data <- data %>% 
+        rename(Unemployment = "Unemployment (% of total Labor Force)")
+
+data %>% filter(YEAR >= 1985 & YEAR <= 2019) %>% 
+        ggplot(mapping = aes(x = YEAR, y = Unemployment)) +
+        geom_point(color = "green") +
+        geom_smooth() + 
+        labs(title = "UNEMPLOYMENT RATE (1985 - 2019)")
+```
+
+We have missing values for this variable. We'll just ommit that for now.  Observations for this variable starts from year 1985 upto 2019. Also, the trend is going downward with peak values around 2002 to 2005.
+
+## Research Question 1
+
+How does GDP vary over the years?
+
+**Sneak peek on `GDP`**
+```{r message=FALSE}
+data <- data %>% rename(GDP = "GDP per capita ($)")
+ggplot(data = data, mapping = aes(x = YEAR, y = GDP)) +
+        geom_point(color = "red") +
+        geom_smooth() +
+        labs(title = "GDP OVER THE YEAR")
+```
+
+`GDP` is doing good with an increasing trend over the year. Let's take a look of the years with highest and lowest `GDP`.
+
+```{r}
+# Highest
+data %>% filter(GDP == max(GDP)) %>% select(YEAR, GDP)
+
+# Lowest
+data %>% filter(GDP == min(GDP))  %>% select(YEAR, GDP)
+```
+
+Obviously from the above plot, year 2019 has the highest `GDP` while year `1962` has the lowest. What do other variables say about this?
+
+## Research Question 2
+Does GDP have a direct effect on self-rated poverty? If not, then what other factors in the dataset have a relationship with the self-rated poverty?
+
+In this analysis we will use simple linear regression to check if there is a relationship between `self-rated poverty` and `GDP`?. 
+
+**The model**
+
+$$Y ≈ \beta_0 + \beta_1X$$
+Here, our outcome variable is `srp` while our predictor is `GDP` .
+
+**Goal**
+
+1. Estimate $\beta_1$.
+
+2. See if $\beta_1 = 0$ and from this we can say that there is no relationship between the two variables. This is done, by checking the p-value.
+
+**GDP vs SRP**
+
+First, let's check if the assumptions are met using diagnostic plots.
+```{r}
+# Data setup
+srp_data <- srp_data %>% rename(GDP = "GDP per capita ($)")
+plot(srp_data$GDP, srp_data$srp, xlab = "GDP", ylab = "SRP")
+srp_vs_gdp = lm((srp_data$srp) ~ srp_data$GDP)
+plot(srp_vs_gdp)
+```
+
+The residual plot shows that the data points are not scattered randomly above and below the residual line and so a non-linear model would be ideal in modelling the data (Observable trend of red line tells us that linearity assumption is not met).
+
+Log-transformation:
+```{r}
+model = lm(log(srp_data$srp) ~ log(srp_data$GDP))
+plot(model)
+
+```
+
+The residual plot red line is fairly straight showing that the linearity assumption is not violated. Normal Q-Q plot also shows that our data is fairly normal. Also, the scale-location plot shows that the points are randomly spread satisfying the assumption of equal variance.
+
+**Results**
+```{r}
+summary(model)
+```
+
+The small p-value (2.26e-07) for the variable `GDP` indicates that it has association with the variable `srp`, i.e, we declare a relationship to exist between `srp` and `GDP`. Also, the coefficient estimate $\hat{\beta} = -9.603$ implies that an additional 1% increase in `GDP` is associated with 9.603 decrease in `srp`.
+
+## What other factors in the dataset have a relationship with the self-rated poverty?
+
+**Method 1:** Pearson Correlation Coefficient
+ 
+```{r}
+pairs.panels(srp_data[,c(1, 2, 4, 5, 6)], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+As we can see, coefficient values between `srp` and the variables `inflation` and `Unemployment` are positive which implies for positive relationship, i.e, as `inflation` and `unemployment` increases `srp` would also increase. There seems a negative relationship between the variables `growth rate` and `srp`. As `growth rate` increases `srp` decreases.
+
+**Method 2:** Multiple Linear Regression
+
+Outcome Variable: `srp`
+
+Predictors: `inflation`,  `unemployment`, `growth rate`
+
+The model:
+
+$$Y ≈ \beta_0 + \beta_1X_1 + \beta_2X_2+ \beta_3X_3+ \beta_4X_4$$
+```{r}
+# Data setup
+srp_data <- srp_data %>% rename(gdp_growth = "GDP GROWTH (%)",
+                                inflation = "Inflation (%)",
+                                unemployment = "Unemployment (% of total Labor Force)")
+srp_vs_all = lm((srp_data$srp) ~ (srp_data$GDP + srp_data$gdp_growth +
+                        srp_data$inflation + srp_data$unemployment))
+plot(srp_vs_all)
+```
+ 
+Assumptions on linearity not met. Let's transform the data.
+ 
+```{r}
+model2 = lm(log(srp_data$srp) ~ (log(srp_data$GDP) + 
+                                         log(srp_data$gdp_growth) +
+                                         log(srp_data$inflation) +
+                                         log(srp_data$unemployment)))
+plot(model2)
+```
+
+The residual plot red line is fairly straight (points fairly random) showing that the linearity assumption is not violated. Normal Q-Q plot also shows that our data is fairly normal. Also, the scale-location plot shows that the points are randomly spread satisfying the assumption of equal variance.
+
+
+**Results**
+```{r}
+summary(model2)
+model2$coefficients
+```
+Only the variable `GDP` (p-val < 0.05) has a relationship with the outcome variable `srp`. Also, our model here is quite good having 0.08995 RSE and 0.5765 $R^2$.
+
+**Summary:**
+
+1. `GDP` is doing good with an increasing trend over the year.
+
+2. We declare a relationship to exist between `srp` and `GDP`. The coefficient estimate $\hat{\beta} = -9.603$ implies that an additional 1% increase in `GDP` is associated with 9.603 decrease in `srp`. (Simple Linear Regression result)
+
+3. Coefficient values between `srp` and the variables `inflation` and `Unemployment` are positive which implies for positive relationship, i.e, as `inflation` and `unemployment` increases `srp` would also increase. There seems a negative relationship between the variables `growth rate` and `srp`. As `growth rate` increases `srp` decreases. (Pearson Correlation Coefficient result)
+
+
+4. Only the variable `GDP` (p-val < 0.05) has a relationship with the outcome variable `srp`. Also, our model here is quite good having 0.08995 RSE and 0.5765 $R^2$. (Multiple Linear Regression result)**Findings:**
+
+1. `GDP` is doing good with an increasing trend over the year.
+
+2. We declare a relationship to exist between `srp` and `GDP`. The coefficient estimate $\hat{\beta} = -9.603$ implies that an additional 1% increase in `GDP` is associated with 9.603 decrease in `srp`. (Simple Linear Regression result)
+
+3. Coefficient values between `srp` and the variables `inflation` and `Unemployment` are positive which implies for positive relationship, i.e, as `inflation` and `unemployment` increases `srp` would also increase. There seems a negative relationship between the variables `growth rate` and `srp`. As `growth rate` increases `srp` decreases. (Pearson Correlation Coefficient result)
+
+
+4. Only the variable `GDP` (p-val < 0.05) has a relationship with the outcome variable `srp`. Also, our model here is quite good having 0.08995 RSE and 0.5765 $R^2$. (Multiple Linear Regression result)
