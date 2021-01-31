@@ -1,0 +1,464 @@
+---
+title: "Contents"
+author: ""
+date: ""
+output:
+        html_document:
+                toc: true
+                theme: united
+                number_sections: false
+                highlight: tango
+                toc_depth: 3
+
+---
+
+# Overview
+
+In this notebook, explonatory data analysis is performed to get a fair idea about factors affecting the establishment of different types of restaurant at different places in Metro Manila, aggregate rating of each restaurant and many more. Three models are also compared to have an idea of the best predicting model. We compare the test MSE of the three models.
+
+# Libraries
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readr)
+library(skimr)
+library(reshape2)
+library(ggcorrplot)
+library(ISLR)
+library(tree)
+library(randomForest)
+library(kableExtra)
+```
+
+# Data Cleaning
+
+There's nothing so much to clean in this dataset but I will check if there are missing values and redundant observations by exploring the data and then working on it.
+
+## Reading the Dataset
+```{r, warning=FALSE, message=FALSE}
+data = read_csv("data.csv")
+data = data %>% select(-c("X1" ))
+head(data) %>% 
+        rmarkdown::paged_table()
+```
+
+## Data Exploration
+```{r}
+dim(data)
+
+# Variable types
+class_type = as.matrix(lapply(data, function(x) class(x)))
+colnames(class_type) = c("class_type")
+class_type
+
+# Missing Values
+missing_val = as.matrix(lapply(data, function(x) sum(is.na(x))))
+colnames(missing_val) = c("missing_values")
+missing_val
+filter(data, is.na(cuisines) | is.na(is_book_form_web_view) |
+        is.na(is_zomato_book_res)) %>% 
+        rmarkdown::paged_table()
+
+# Detect Duplicate Observations
+obs_dup = duplicated(data)
+subset(data, obs_dup)
+
+# Deleting Unnnecessary Columns for Analysis
+data = data %>% select(-c('id', 'city_id', 'country_id', 'locality',
+                          'locality_verbose', 'rating_color',
+                          'rating_text', 'currency'))
+
+# Reading Column Names
+names(data)
+
+# Reading uninque values on selected columns
+u1 = unique(data$aggregate_rating)
+u2 = unique(data$price_range)
+u3 = unique(data$include_bogo_offers)
+u4 = unique(data$has_online_delivery)
+u5 = unique(data$is_book_form_web_view)
+u6 = unique(data$is_delivering_now)
+u7 = unique(data$is_zomato_book_res)
+
+# Data with these variables
+data_ret = data
+
+# Remove variables with 0 variance
+data = data %>% select(-c('include_bogo_offers', 'has_online_delivery',
+                          'is_book_form_web_view', 'is_delivering_now'))
+```
+
+Variables `is_book_form_web_view`, `include_bogo_offers`, `has_online_delivery`, `is_delivering_now` have elements which are all equal. This would result a 0 variance and would produce NA values in my correlation matrix. So I removed these variables. This leaves me missing values for `cuisines` and `is_zomato_book_res` variables on restaurant with `ID` 18683703, 18376892, and 18451637. I'll impute the missing value with the mean of these variable right after encoding. Also, I have no duplicates in data.
+
+## Encoding Categorical Variables
+```{r}
+# Encoding
+data$address = as.numeric(as.factor(data$address))
+data$city = as.numeric(as.factor(data$city))
+data$cuisines = as.numeric(as.factor(data$cuisines))
+data$name = as.numeric(as.factor(data$name))
+str(data)
+
+# Taking care of missing values
+data$cuisines = ifelse(is.na(data$cuisines), ave(data$cuisines,FUN = function(x) mean(x, na.rm = TRUE)), data$cuisines)
+data$is_zomato_book_res = ifelse(is.na(data$is_zomato_book_res), ave(data$is_zomato_book_res,FUN = function(x) mean(x, na.rm = TRUE)), data$is_zomato_book_res)
+```
+
+## Summary Statistics
+```{r}
+skim(data)
+```
+# Data Visualization
+
+## Correlations
+```{r}
+# Compute the correlation matrix
+pearson_cormat = cor(data, method = "pearson")
+ggcorrplot(pearson_cormat, title = "Pearson Correlation")
+
+# kendall_cormat = cor(data, method = c("kendall"))
+# ggcorrplot(kendall_cormat, title = "Kendall Correlation")
+
+spearman_cormat = cor(data, method = "spearman")
+ggcorrplot(spearman_cormat, title = "Spearman Correlation")
+```
+
+These are the variables with noticeable correlation:
+
+1. `average_cost_for_two` and `price_range`
+
+- I guess these two variables are redundant since they both relate to price. 
+2. `is_table_reservation_supported` and `average_cost_for_two`
+
+- Restaurants that allow table reservation might be expensive. 
+
+3. `aggregate_rating_rating` and `votes`
+
+- More votes imply high ratings, conversely high ratings imply more votes. 
+
+## Restaurants Delivering Online or Not
+```{r}
+u4 = unique(data_ret$has_online_delivery)
+ggplot(data = data_ret) +
+        geom_bar(mapping = aes(x = as.character(has_online_delivery), 
+                               fill = as.character(has_online_delivery))) +
+        labs(x = "Has online delivery or not?", y = "Count",
+             title = "Restaurants Delivering Online or Not",
+             fill = "has_online_delivery")
+data_ret %>%
+count(has_online_delivery)
+```
+All restaurants doesn't deliver online. Why is this?
+
+## Restaurants Allowing Table Booking or Not
+```{r}
+ggplot(data = data) +
+        geom_bar(mapping = aes(x = as.character(has_table_booking), 
+                               fill = as.character(has_table_booking))) +
+        labs(x = "Allow table booking or not?", y = "Count",
+             title = "Restaurants Allowing Table Booking or Not",
+             fill = "has_table_booking")
+data %>%
+count(has_table_booking) %>% 
+        rmarkdown::paged_table()
+
+# Restaurants with table booking
+data_ret %>% filter(has_table_booking == 1) %>% 
+        select(name, address) %>% 
+        rmarkdown::paged_table()
+```
+
+## Table Booking vs Aggregate Rating
+```{r fig.height = 5, fig.width = 10}
+ggplot(data = data_ret) +
+geom_bar(mapping = aes(x = as.character(aggregate_rating),
+                       fill = as.character(has_table_booking)),
+         position = "fill") + 
+        theme(axis.text.x=element_text(angle=50, size=6, vjust=0.5)) +
+        labs(x = "Aggregate Rating", y = "Count",
+             title = "Table Booking Rate vs Aggregate Rating",
+             fill = "has_table_booking")
+
+
+```
+
+Most of the restaurants with high rating have table bookings but quite a few of them as represented by the blue bars.
+
+## Location
+```{r fig.height = 5, fig.width = 10}
+ggplot(data = data_ret) +
+        geom_bar(mapping = aes(x = city, 
+                               fill = city)) +
+        labs(x = "Location", y = "Count",
+             title = "Locationwise Counts for Restaurants",
+             fill = "City") + 
+        theme(axis.text.x=element_text(angle=50, size=6, vjust=0.5))
+```
+
+## Location and Rating
+```{r fig.height = 10, fig.width = 20}
+ggplot(data = data_ret, mapping = aes(x = city, y = aggregate_rating,
+                                      fill = city)) +
+        geom_boxplot() + theme(text = element_text(size = 20),
+                               axis.text.x = element_text(angle = 90,
+                                                         hjust = 1)) +
+        labs(x = "City", y = "Aggregaate Rating",
+             title = "Locationwise Rating",
+             fill = "City")
+```
+
+## Restaurant Type
+
+There are too many restaurant cuisines (699 obs) and plotting them would be inconvenient, so what I will do is to get the top 30 cuisines only.
+```{r fig.height = 20, fig.width = 30}
+top_30_cuisines = data_ret %>% group_by(cuisines) %>% count() %>%
+        arrange(desc(n))
+
+top_30_cuisines = top_30_cuisines[1:30, ]
+top_30_cuisines
+
+ggplot(data = top_30_cuisines) +
+geom_bar(mapping = aes(x = cuisines, y = n, fill = cuisines),
+         stat = "identity") + 
+        theme(text = element_text(size = 30),
+              axis.text.x = element_text(angle = 90, hjust = 1)) +
+        labs(x = "Cuisines", y = "Count",
+             title = "Top 30 Restaurant Type",
+             fill = "Cuisines")
+```
+
+## Cuisines and Rating
+```{r fig.height = 20, fig.width = 30}
+data_for_this_plot = 
+        subset(data_ret, cuisines %in% top_30_cuisines$cuisines)
+
+ggplot(data = data_for_this_plot, mapping = aes(x = cuisines,
+                                             y = aggregate_rating, 
+                                             fill = cuisines)) +
+        geom_boxplot() + theme(text = element_text(size = 30),
+                               axis.text.x = element_text(angle = 90,
+                                                         hjust = 1)) +
+        labs(x = "City", y = "Aggregaate Rating",
+             title = "Top 30 Cuisine Rating",
+             fill = "City")
+```
+
+## Cost of Restaurant
+```{r fig.height = 30, fig.width = 40}
+ggplot(data = data_ret) +
+geom_bar(mapping = aes(x = as.factor(average_cost_for_two),
+                       fill = as.factor(average_cost_for_two)),
+         show.legend = FALSE) + labs(x = "Cost", y = "Count",
+                                     title = "Cost of Restaurants") +
+        theme(text = element_text(size = 40), 
+              axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The cost is in terms of Philippine peso. As we can see, 500php is the most frequent rate followed by 400php, and 300php.
+
+## Number of Restaurants in a Location (address)
+```{r fig.height = 40, fig.width = 40}
+data_for_this_plot = data_ret %>% group_by(address) %>% count() %>% 
+        arrange(desc(n))
+
+data_for_this_plot %>% rmarkdown::paged_table()
+
+# Top 50 location having more restaurants
+top_50 = data_for_this_plot[1:50, ]
+ggplot(data = top_50) +
+        geom_bar(aes(x = address, y = n, fill = address),
+                 stat = "identity", show.legend = FALSE) + 
+        theme(text = element_text(size = 35),
+              axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Number of Restaurant Type per Location
+```{r}
+data_for_this_plot = data_ret %>% group_by(address, cuisines) %>%
+        count() %>% arrange(desc(n))
+data_for_this_plot %>% rmarkdown::paged_table()
+```
+
+## Most famous Restaurant in Metro Manila
+```{r fig.height = 30, fig.width = 40}
+data_for_this_plot = data_ret %>% group_by(name) %>% count() %>%
+        arrange(desc(n))
+top_50 = data_for_this_plot[1:50, ]
+top_50 %>% ggplot() + 
+        geom_bar(aes(x = name, y = n, fill = name), stat = "identity", 
+                 show.legend = FALSE) + labs(x = "Restaurant",
+                 y = "No. of Oulets", title = "Top 50 Famous Restaurants") +
+                 theme(text = element_text(size = 30),
+                 axis.text.x = element_text(angle = 90, hjust = 1,
+                                            vjust = 0.9))
+```
+
+# Regression Analysis
+
+In this section I'll perform three regression models to generate predictions. I'll compare the test MSE of these three models to arrive at a single model that has the best accuracy.
+
+## Setting the Data
+
+Here, I will use the validation set approach to split the data into 2. One for training set and the other half is for test set.
+```{r}
+# Retaining predictors and response variable
+data_for_reg = data_ret %>% select(aggregate_rating, has_online_delivery,
+                                   has_table_booking, votes, address,
+                                   cuisines, average_cost_for_two)
+
+# Converting qualitative variables to factors
+data_for_reg$has_online_delivery =
+        as.factor(data_for_reg$has_online_delivery)
+
+data_for_reg$has_table_booking =
+        as.factor(data_for_reg$has_table_booking)
+
+data_for_reg$address =
+        as.factor(data_for_reg$address)
+
+data_for_reg$cuisines =
+        as.factor(data_for_reg$cuisines)
+
+class_type = as.matrix(lapply(data_for_reg, function(x) class(x)))
+colnames(class_type) = c("class_type")
+class_type
+
+# Removing vars with one value
+u1 = unique(data_for_reg$has_online_delivery)
+u2 = unique(data_for_reg$has_table_booking)
+u3 = unique(data_for_reg$votes)
+u4 = unique(data_for_reg$address)
+u5 = unique(data_for_reg$cuisines)
+u6 = unique(data_for_reg$average_cost_for_two)
+data_for_reg = data_for_reg %>% select(-has_online_delivery)
+
+# Removing 1 missing value
+data_for_reg = data_for_reg[complete.cases(data_for_reg), ]
+data_for_reg = data_for_reg %>% select(-c(address, cuisines))
+# Data types
+nrow(data_for_reg)
+```
+
+## Splitting the Data
+```{r}
+set.seed(1)
+train = sample(6829, 3415)
+```
+
+## Multiple Linear Regression
+
+Given qualitative variables such as `has_online_delivery`, `has_table_booking`, `address`, and `cuisines`, R generates dummy variables automatically. Below we fit a multiple regression model.
+```{r warning=FALSE}
+lm.fit = lm(average_cost_for_two ~ has_table_booking + votes +
+                    aggregate_rating,
+            data = data_for_reg, subset = train)
+summary(lm.fit)
+attach(data_for_reg)
+mean((aggregate_rating - predict(lm.fit))[-train]^2)
+```
+ 
+Therefore, the estimated test MSE for multiple linear regression fit is 602243. The square root of the MSE is therefore around 776, 
+indicating that this model leads to test predictions that are within 
+around 776php of the true median cost value.
+
+## Regression Tree
+```{r}
+reg_tree_data = data_for_reg
+reg_tree = tree(average_cost_for_two ~ ., reg_tree_data, subset = train) 
+summary(reg_tree)
+
+plot(reg_tree)
+text(reg_tree, pretty = 0)
+```
+
+The tree indicates that restaurants with low ratings and low votes
+have low rates ($aggregate\_rating<3.35$, $votes<7.5$). On the other hand, restaurants with high ratings and have table bookings are expensive ($aggregate\_rating \geq 3.35$, $has\_table\_booking:1$). This is then followed by restaurants with no table bookings but with high rating ($has\_table\_booking:0$, $aggregate\_rating \geq 3.75$).
+
+```{r}
+# Tree Pruning ------------------------------------------------------------
+cv.reg_tree = cv.tree(reg_tree)
+names(cv.reg_tree)
+cv.reg_tree
+plot(cv.reg_tree$size, cv.reg_tree$dev, type = 'b')
+
+prune.reg_tree = prune.tree(reg_tree, best = 5)
+plot(prune.reg_tree)
+text(prune.reg_tree, pretty = 0)
+
+# Prediction
+y_hat = predict(prune.reg_tree, newdata = reg_tree_data[-train,])
+reg_tree_data.test = reg_tree_data[-train, 'average_cost_for_two']
+
+plot(y_hat, reg_tree_data.test$average_cost_for_two)
+abline(0, 1)
+mean((y_hat - reg_tree_data.test$average_cost_for_two)^2)
+```
+
+
+In this case, the tree with 5 terminal nodes is selected by cross-validation. The test set MSE associated with the regression tree 
+is 239351.7 The square root of the MSE is around 489, 
+indicating that this model leads to test predictions that are within 
+around Php489 of the true median cost value.
+
+## Random Forest
+
+Here we use $m = \sqrt{p}= 2$ for the subset of predictors in every split.
+```{r}
+rndm_frst_data = data_for_reg
+rndm_frst = randomForest(average_cost_for_two ~ .,
+                         data = rndm_frst_data, subset = train,
+                         mtry = 2, importance = TRUE)
+
+# Prediction
+yhat.rndm_frst = predict(rndm_frst,
+                         newdata = rndm_frst_data[-train, ])
+rndm_frst_data.test = rndm_frst_data[-train,
+                                     'average_cost_for_two']
+mean((yhat.rndm_frst - rndm_frst_data.test$average_cost_for_two)^2)
+
+```
+The test set MSE is 254707.5; this indicates that random forests did not yield an improvement over regression tree.
+
+Using the importance() function, we can view the importance of 
+each variable.
+
+```{r}
+importance(rndm_frst)
+varImpPlot (rndm_frst)
+```
+
+The results indicate that across all of the trees considered in 
+the random forest, votes (vote) 
+and ratings (aggregate_rating) are by far the two most important variables.
+
+# Summary
+
+```{r echo=FALSE}
+Multiple_Linear_Regression = 602243
+Regression_Tree = 239351.7
+Random_Forest = 254707.5
+df = data.frame(Multiple_Linear_Regression, Regression_Tree,
+                Random_Forest)
+df %>% kbl() %>% 
+        kable_material_dark()
+```
+
+
+- Among the three models, regression tree performed the best. This is then followed by random forest and multiple linear regression. 
+
+- Decision trees outperform multiple linear regression which implies that there is a highly non-linear and complex relationship between the features and the response.
+
+- I just used validation approach in splitting the data. This can be improve by using cross-validation or any other resampling procedures.
+
+- Most of the restaurants in Metro Manila have no table bookings.
+
+- High rating restaurants have table bookings.
+
+- Quezon city has the most number of restaurants.
+
+- Most of the high rating restaurants are in Makati , Taguig, San Juan, and Pasay City.
+
+- Filipino Coffee, Filipino Asian, Bakery Coffee, and Japanese Ramen are the cuisines with the most high ratings.
+
+- 500php is the most frequent rate followed by 400php, and 300php.
+
+- The most famous restaurant in Metro Manila is Starbucks followed by Jollibee and McDonalds. 
