@@ -462,3 +462,5 @@ df %>% kbl() %>%
 - 500php is the most frequent rate followed by 400php, and 300php.
 
 - The most famous restaurant in Metro Manila is Starbucks followed by Jollibee and McDonalds. 
+
+Source Code: https://github.com/EarlMacalam/Data-Analysis-with-R/blob/master/Restaurants-Price-Prediction.Rmd 
