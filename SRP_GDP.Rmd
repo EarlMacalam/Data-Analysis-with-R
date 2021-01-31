@@ -291,3 +291,5 @@ Only the variable `GDP` (p-val < 0.05) has a relationship with the outcome varia
 
 
 4. Only the variable `GDP` (p-val < 0.05) has a relationship with the outcome variable `srp`. Also, our model here is quite good having 0.08995 RSE and 0.5765 $R^2$. (Multiple Linear Regression result)
+
+Source Code: https://github.com/EarlMacalam/Data-Analysis-with-R/blob/master/SRP_GDP.Rmdhttps://github.com/EarlMacalam/Data-Analysis-with-R/blob/master/SRP_GDP.Rmd
