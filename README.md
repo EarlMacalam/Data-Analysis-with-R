@@ -6,3 +6,5 @@ This repository contains my exploratory data analysis projects using R. All sour
 - http://rpubs.com/Emac/Metro_Manila_Restaurants_Analysis
 
 - https://rpubs.com/Emac/gdp_srp_analysis
+
+- https://rpubs.com/Emac/Predict_Income
