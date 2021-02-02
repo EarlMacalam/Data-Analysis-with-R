@@ -1,0 +1,242 @@
+---
+title: "Predict Income Level from Census Data"
+author: "Earl Macalam"
+date: "2/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+I downloaded the data from Kaggle and the goal of this project is to predict wether a person earn greater than $\$50$k a year.
+
+### Data Cleaning Process
+
+I will start by cleaning the data.
+```{r}
+adults <- read.csv("adult.csv", na.strings = c('','?'))
+str(adults)
+library(skimr)
+skim(adults)
+```
+
+The data has 32561 observations and 15 variables with some missing values. Now, I will parse character type variables to factor type for convenience on the analysis part.
+
+```{r}
+adults$workclass <- as.factor(adults$workclass)
+adults$education <- as.factor(adults$education)
+adults$marital.status <- as.factor(adults$marital.status)
+adults$relationship <- as.factor(adults$relationship)
+adults$race <- as.factor(adults$race)
+adults$sex <- as.factor(adults$sex)
+adults$native.country <- as.factor(adults$native.country)
+adults$occupation <- as.factor(adults$occupation)
+adults$income <- as.factor(adults$income)
+```
+
+Checking the missing and unique values for every variables.
+```{r}
+sapply(adults, function(x) sum(is.na(x)))
+sapply(adults, function(x) length(unique(x)))
+```
+
+Visualizing missing values.
+```{r}
+library(Amelia)
+missmap(adults, main = "Missing values vs observed")
+table (complete.cases(adults))
+```
+
+7% (2399/32561) of the total data has missing value. Missing values are from the variables `workclass`, `occupation`, and `native.country`. Note that these variables are categorical so imputing them won't be a good idea. So I'll just remove observations with missing values.
+
+```{r}
+adults <- adults[complete.cases(adults), ]
+```
+
+### Explore Numeric Variables with Income Levels
+```{r}
+library(ggplot2)
+library(gridExtra)
+n1 <- ggplot(aes(x = income, y = age), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs Age")
+
+n2 <- ggplot(aes(x = income, y = fnlwgt), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs fnlwgt")
+
+n3 <- ggplot(aes(x = income, y = education.num), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs Education")
+
+n4 <- ggplot(aes(x = income, y = capital.gain), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs CapGain")
+
+n5 <- ggplot(aes(x = income, y = capital.loss), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs CapLoss")
+
+n6 <- ggplot(aes(x = income, y = hours.per.week), data = adults) + 
+        geom_boxplot() + labs(title = "Income vs Hrs/week")
+grid.arrange(n1, n2, n3, n4, n5, n6, ncol = 3)
+```
+All numerical variables show significant variation with income except `capital loss`, `capital gain`, and `final weight`. So I'll remove these variables.
+
+```{r}
+adults$capital.gain <- NULL
+adults$capital.loss <- NULL
+adults$fnlwgt <- NULL
+```
+
+
+### Explore Categorical Variables with Income Levels
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+by_workclass <- adults %>% group_by(workclass, income) %>% summarise(n = n())
+
+by_education <- adults %>% group_by(education, income) %>% summarise(n = n())
+
+by_marital.status <- adults %>% group_by(marital.status, income) %>% summarise(n = n())
+
+by_occupation <- adults %>% group_by(occupation, income) %>% summarise(n = n())
+
+by_relationship <- adults %>% group_by(relationship, income) %>% summarise(n = n())
+
+by_race <- adults %>% group_by(race, income) %>% summarise(n = n())
+
+by_sex <- adults %>% group_by(sex, income) %>% summarise(n = n())
+
+by_native.country <- adults %>% group_by(native.country, income) %>% summarise(n = n())
+
+
+c1 <- ggplot(aes(x = workclass, y = n), data = by_workclass) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c2 <- ggplot(aes(x = education, y = n), data = by_education) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c3 <- ggplot(aes(x = marital.status , y = n), data = by_marital.status ) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c4 <- ggplot(aes(x = occupation, y = n), data = by_occupation) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c5 <- ggplot(aes(x = relationship, y = n), data = by_relationship) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c6 <- ggplot(aes(x = race, y = n), data = by_race) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c7 <- ggplot(aes(x = sex, y = n), data = by_sex) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=50, size = 5, vjust=0.5))
+
+
+c8 <- ggplot(aes(x = native.country, y = n), data = by_native.country) + 
+        geom_bar(aes(fill = income), stat = "identity", position = "dodge") +
+        theme(axis.text.x=element_text(angle=90, size = 3, vjust=0.5)) 
+
+
+grid.arrange(c1, c2, c3, c4, c5, c6, c7, c8, ncol = 2)
+```
+
+
+Only the variable `native.country` doesn't show significant variation. All variables so far vary significantly. I'll exclude the variable `native.country`.
+
+```{r}
+adults$native.country <- NULL
+```
+
+### Model Fitting
+
+Splitting the data.
+```{r}
+train <- adults[1:24000,]
+test <- adults[24001:30162,]
+```
+
+Fitting logistic regression.
+```{r}
+glm.fit <- glm(income ~ ., data = train, family = binomial)
+summary(glm.fit)
+```
+
+The smallest p-value here is associated with the variables `age`, `hours.per.week`, `occupation`, and `education`. This suggest a strong association with the probability of wage that is greater $50K. Race variable turns out not to be significant so we can eliminate this from our model.
+
+```{r}
+anova(glm.fit, test="Chisq")
+```
+
+From the above table we can see the drop in deviance when adding each variable one at a time. Adding age, workclass, education, marital status, occupation, relationship, race, sex, capital gain, capital loss and hours per week significantly reduces the residual deviance. `education.num` seem to have no effect.
+
+For prediction.
+```{r}
+attach(train)
+glm.probs <- predict(glm.fit, train, type="response")
+glm.probs[1:10]
+contrasts(income)
+```
+
+I have printed only the first ten probabilities. We know that
+these values correspond to the probability that a person's income is greater than $50k,
+rather than less than or equal to \$50k, because the contrasts() function indicates that R has created a dummy variable with a 1 for greater than \$50k.
+
+```{r}
+glm.pred <- rep("<=50K", 24000)
+glm.pred[glm.probs > .5] = ">50k"
+```
+
+The first command creates a vector of 24000, $\leq 50$K elements. The second line 
+transforms to $> 50$K all of the elements for which the predicted probability of 
+a person earning greater than $50k exceeds 0.5. 
+
+Confusion matrix.
+```{r}
+attach(train)
+table(glm.pred, income)
+mean(glm.pred == income)
+mean(glm.pred != income)
+```
+
+The model correctly predicted 14193 persons whose in come is <=50K and 2050 perons whose income is >50K, for a total of 16243 correct predictions. In this case, logistic regression correctly predicted 67 % of the time on the training data. The test error rate is 32%.
+
+### Apply model to the test set
+```{r}
+glm.probs <- predict(glm.fit, test, type="response")
+glm.pred <- rep("<=50K", 6162)
+glm.pred[glm.probs > .5] = ">50k"
+
+attach(test)
+table(glm.pred, income)
+mean(glm.pred == income)
+mean(glm.pred != income)
+```
+
+The model is doing good in our test set with accuracy 73% and test error rate 26%.
+
+At last, plot the ROC curve and calculate the AUC (area under the curve). The closer AUC for a model comes to 1, the better predictive ability.
+
+```{r}
+library(ROCR)
+p <- predict(glm.fit, newdata=test, type="response")
+pr <- prediction(p, test$income)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+### The End
+
+Here, I only used simple validation set approach in splitting the data. One powerful method to use would be k-fold cross-validation. I can also improve the model by removing those variables which were not significant or perform variable selection methods.
+
